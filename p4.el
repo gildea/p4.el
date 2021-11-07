@@ -864,13 +864,13 @@ characters."
   "Return name of file BUFFER is visiting, or NIL if none,
 respecting the `p4-follow-symlinks' setting."
   (let ((f (buffer-file-name buffer)))
-    (when f (p4-follow-link-name f))))
+    (when f (file-local-name (p4-follow-link-name f)))))
 
 (defun p4-process-output (cmd &rest args)
   "Run CMD (with the given ARGS) and return the output as a string,
 except for the final newlines."
   (with-temp-buffer
-    (apply 'call-process cmd nil t nil args)
+    (apply #'process-file cmd nil t nil args)
     (skip-chars-backward "\n")
     (buffer-substring (point-min) (point))))
 
@@ -913,7 +913,7 @@ The program to be executed is taken from `p4-executable'; INFILE,
 DESTINATION, and DISPLAY are to be interpreted as for
 `call-process'.  The argument list ARGS is modified using
 `p4-modify-args-function'."
-    (apply #'call-process (p4-executable) infile destination display
+    (apply #'process-file (p4-executable) infile destination display
            (funcall p4-modify-args-function args))))
 
 (defun p4-call-process-region (start end &optional delete buffer display &rest args)
@@ -922,8 +922,29 @@ The program to be executed is taken from `p4-executable'; START,
 END, DELETE, BUFFER, and DISPLAY are to be interpreted as for
 `call-process-region'.  The argument list ARGS is modified using
 `p4-modify-args-function'."
-  (apply #'call-process-region start end (p4-executable) delete buffer display
+  (apply #'p4--process-file-region start end (p4-executable)
+         delete buffer display
          (funcall p4-modify-args-function args)))
+
+;; p4--process-file-region is a copy of xref--process-file-region,
+;; October 2021.  The speed claims therein have not been verified.
+(defun p4--process-file-region ( start end program
+                                   &optional buffer display
+                                   &rest args)
+  ;; FIXME: This branching shouldn't be necessary, but
+  ;; call-process-region *is* measurably faster, even for a program
+  ;; doing some actual work (for a period of time). Even though
+  ;; call-process-region also creates a temp file internally
+  ;; (https://lists.gnu.org/archive/html/emacs-devel/2019-01/msg00211.html).
+  (if (not (file-remote-p default-directory))
+      (apply #'call-process-region
+             start end program nil buffer display args)
+    (let ((infile (make-temp-file "ppfr")))
+      (unwind-protect
+          (progn
+            (write-region start end infile nil 'silent)
+            (apply #'process-file program infile buffer display args))
+        (delete-file infile)))))
 
 (defun p4-start-process (name buffer &rest program-args)
   "Start Perforce in a subprocess.  Return the process object for it.
@@ -931,7 +952,7 @@ The program to be executed is taken from `p4-executable'; NAME
 and BUFFER are to be interpreted as for `start-process'.  The
 argument list PROGRAM-ARGS is modified using
 `p4-modify-args-function'."
-  (apply #'start-process name buffer (p4-executable)
+  (apply #'start-file-process name buffer (p4-executable)
          (funcall p4-modify-args-function program-args)))
 
 (defun p4-compilation-start (args &optional mode name-function highlight-regexp)
@@ -1993,7 +2014,7 @@ continuation lines); show it in a pop-up window otherwise."
         (with-temp-buffer
           (or (and first-iteration (stringp p4-password-source)
                    (let ((process-environment (p4-current-environment)))
-                     (zerop (call-process-shell-command p4-password-source
+                     (zerop (process-file-shell-command p4-password-source
                                                         nil '(t nil)))))
               (insert (read-passwd (format prompt (p4-current-server-port))) "\n"))
           (setq first-iteration nil)
