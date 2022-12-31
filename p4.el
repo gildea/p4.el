@@ -929,7 +929,7 @@ END, DELETE, BUFFER, and DISPLAY are to be interpreted as for
 ;; p4--process-file-region is a copy of xref--process-file-region,
 ;; October 2021.  The speed claims therein have not been verified.
 (defun p4--process-file-region ( start end program
-                                   &optional buffer display
+                                   &optional delete buffer display
                                    &rest args)
   ;; FIXME: This branching shouldn't be necessary, but
   ;; call-process-region *is* measurably faster, even for a program
@@ -938,7 +938,7 @@ END, DELETE, BUFFER, and DISPLAY are to be interpreted as for
   ;; (https://lists.gnu.org/archive/html/emacs-devel/2019-01/msg00211.html).
   (if (not (file-remote-p default-directory))
       (apply #'call-process-region
-             start end program nil buffer display args)
+             start end program delete buffer display args)
     (let ((infile (make-temp-file "ppfr")))
       (unwind-protect
           (progn
